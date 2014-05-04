@@ -48,6 +48,7 @@ def gripperCallback(msg, gripper):
     """
     Closes the gripper if any of the beams are broken
 
+    msg: the message from the topic
     gripper: Gripper.left or Gripper.right
     """
     gripper_side = "left" if (gripper == Gripper.left) else "right"
