@@ -18,7 +18,6 @@ client.wait_for_server()
 open_position = 0.09
 closed_position = 0.0
 
-
 client.send_goal(Pr2GripperCommandGoal(
         Pr2GripperCommand(position = closed_position, max_effort = -1)))
 #client.wait_for_result()
