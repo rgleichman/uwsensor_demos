@@ -25,11 +25,3 @@ while not rospy.is_shutdown():
     goal = Pr2GripperCommandActionGoal(goal=Pr2GripperCommandGoal(Pr2GripperCommand(position = position, max_effort = -1)))
     pub.publish(goal)
     r.sleep()
-
-#client = actionlib.SimpleActionClient(
-#    'r_gripper_controller/gripper_action', Pr2GripperCommandAction)
-#client.wait_for_server()
-
-
-
-
