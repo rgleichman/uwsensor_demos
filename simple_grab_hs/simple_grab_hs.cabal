@@ -1,0 +1,34 @@
+Name:              ROS-simple_grab_hs
+Version:           0.0
+Synopsis:          I am code
+Cabal-version:     >=1.6
+Category:          Robotics
+Build-type:        Custom
+
+Executable simple_grab_hs
+  Build-Depends:   base >= 4.2 && < 6,
+                   vector > 0.7,
+                   time >= 1.1,
+                   ROS-rosgraph-msgs,
+                   roshask == 0.1.*,
+                   ROS-std-msgs,
+                   ROS-pr2-controllers-msgs,
+                   ROS-actionlib-msgs,
+                   ROS-pr2-pretouch-sensor-optical-msgs
+  GHC-Options:     -O2
+  Hs-Source-Dirs:  src
+  Main-Is:         Main.hs
+  Other-Modules:   Simple_grab_hs
+
+Library
+  Build-Depends:   base >= 4.2 && < 6,
+                   vector > 0.7,
+                   time >= 1.1,
+                   roshask == 0.1.*,
+                   ROS-std-msgs,
+                   ROS-pr2-controllers-msgs,
+                   ROS-actionlib-msgs,
+                   ROS-pr2-pretouch-sensor-optical-msgs
+  GHC-Options:     -O2
+  Exposed-Modules: Simple_grab_hs
+  Hs-Source-Dirs:  src

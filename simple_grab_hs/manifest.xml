@@ -1,0 +1,18 @@
+<package>
+  <description brief="simple_grab_hs">
+
+     simple_grab_hs
+
+  </description>
+  <author>Robbie Gleichman</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/simple_grab_hs</url>
+  <depend package="std_msgs"/>
+  <depend package="pr2_controllers_msgs"/>
+  <depend package="actionlib_msgs"/>
+  <depend package="pr2_pretouch_sensor_optical"/>
+
+</package>
+
+
