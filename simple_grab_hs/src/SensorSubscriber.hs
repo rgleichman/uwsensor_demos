@@ -19,4 +19,4 @@ showMsg  = putStrLn . ("I heard ya " ++ ) . show -- . getFirst
               -- :: OpticalBeams -> Bool
 
 main :: IO ()
-main = runNode "SensorSubscriber" $ runHandler showMsg =<< subscribe rightTopicName
+main = runNode "SensorSubscriber" $ runHandler showMsg =<< subscribe leftTopicName

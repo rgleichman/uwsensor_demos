@@ -1,4 +1,4 @@
-module SensorSubscriber (main) where
+module GripWhenBroken (main) where
 
 import Ros.Node (subscribe)
 import Ros.Node (runNode)
@@ -11,6 +11,7 @@ import Ros.Pr2_controllers_msgs.Pr2GripperCommand
 import qualified Ros.Std_msgs.Header as H
 import qualified Ros.Actionlib_msgs.GoalID as GID
 import Ros.Node (advertise)
+import Data.Vector.Storable ((!))
 
 -- Types
 data OpenOrClosed = Open | Closed
@@ -21,10 +22,10 @@ data Effort = FullEffort | LimitedEffort Double
 
 --Constants
 rightTopicName :: String
-rightTopicName = "optical/right"
+rightTopicName = "/optical/right"
 
 leftTopicName :: String
-leftTopicName = "optical/left"
+leftTopicName = "/optical/left"
 
 openPosition :: Position
 openPosition = 0.09
@@ -38,13 +39,16 @@ showMsg  = putStrLn . ("I heard ya " ++ ) . show
 
 --Returns if the gripper should be open or closed              
 sensorMsgToOpenOrClosed:: OB.OpticalBeams -> OpenOrClosed
-sensorMsgToOpenOrClosed = brokenToOpenClosed . Vec.elem True . Vec.map word8ToBool . OB.broken
+sensorMsgToOpenOrClosed =
+
+--  brokenToOpenClosed . Vec.elem True . Vec.map word8ToBool . OB.broken
+  brokenToOpenClosed . word8ToBool . (!1) . (OB.broken)
   where
     brokenToOpenClosed True = Closed
     brokenToOpenClosed False = Open
     word8ToBool 0 = False
     word8ToBool _ = True
-
+  
 makeGripperCommandActionGoal :: Position -> Effort -> Pr2GripperCommandActionGoal
 makeGripperCommandActionGoal pos effort =
   Pr2GripperCommandActionGoal{  
@@ -67,15 +71,16 @@ makeGripperCommandActionGoal pos effort =
 
 --If the bool is true, then open sensors
 makeGoalFromBool :: OpenOrClosed -> Pr2GripperCommandActionGoal
-makeGoalFromBool Closed = makeGripperCommandActionGoal closedPosition (LimitedEffort 30)
-makeGoalFromBool Open = makeGripperCommandActionGoal openPosition (LimitedEffort 30)
+makeGoalFromBool Closed = makeGripperCommandActionGoal closedPosition FullEffort
+makeGoalFromBool Open = makeGripperCommandActionGoal openPosition FullEffort
 
 main :: IO ()
 main = runNode "SensorSubscriber" $
-       do sensorMessages <- subscribe rightTopicName
+       do sensorMessages <- subscribe leftTopicName
           let processedMessages = fmap (makeGoalFromBool . sensorMsgToOpenOrClosed) sensorMessages
-          advertise topicName processedMessages
+          advertise leftGripperTopicName processedMessages
           where
-            topicName = "/r_gripper_controller/gripper_action/goal"
+            rightGripperTopicName = "/r_gripper_controller/gripper_action/goal"
+            leftGripperTopicName = "/l_gripper_controller/gripper_action/goal"
               
        
