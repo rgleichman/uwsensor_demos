@@ -1,0 +1,9 @@
+<launch>
+  <node pkg="move_arm" type="move_arm_simple_action" output="screen" name="move_right_arm">    
+    <remap from="arm_ik" to="pr2_right_arm_kinematics/get_constraint_aware_ik" />	
+    <param name="group" type="string" value="right_arm" />
+    <param name="controller_action_name" type="string" value="/r_arm_controller/follow_joint_trajectory" />
+    <param name="trajectory_filter_allowed_time" type="double" value="0.01" />
+  </node>
+</launch>
+
