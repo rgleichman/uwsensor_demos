@@ -8,6 +8,7 @@
   <license>BSD</license>
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/simple_grab_hs</url>
+  <depend package="arm_navigation_msgs"/>
   <depend package="std_msgs"/>
   <depend package="pr2_controllers_msgs"/>
   <depend package="actionlib_msgs"/>

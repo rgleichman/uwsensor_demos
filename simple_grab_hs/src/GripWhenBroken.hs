@@ -42,12 +42,10 @@ sensorMsgToOpenOrClosed:: OB.OpticalBeams -> OpenOrClosed
 sensorMsgToOpenOrClosed =
 
 --  brokenToOpenClosed . Vec.elem True . Vec.map word8ToBool . OB.broken
-  brokenToOpenClosed . word8ToBool . (!1) . (OB.broken)
+  brokenToOpenClosed . (!1) . (OB.broken)
   where
     brokenToOpenClosed True = Closed
     brokenToOpenClosed False = Open
-    word8ToBool 0 = False
-    word8ToBool _ = True
   
 makeGripperCommandActionGoal :: Position -> Effort -> Pr2GripperCommandActionGoal
 makeGripperCommandActionGoal pos effort =
