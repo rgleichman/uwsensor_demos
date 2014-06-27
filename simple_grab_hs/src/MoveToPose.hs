@@ -1,4 +1,5 @@
 module MoveToPose (main) where
+import Prelude hiding (filter)
 import Ros.Node (Topic)
 import Ros.Node (topicRate)
 import Ros.Node (runNode)
@@ -19,13 +20,32 @@ import qualified Ros.Geometry_msgs.Point as POI
 import Data.Vector.Storable (fromList)
 import qualified Ros.Geometry_msgs.Quaternion as QUA
 import qualified Ros.Std_msgs.Header as HEA
+import Ros.Node (subscribe)
+import qualified Ros.Actionlib_msgs.GoalStatus as GOS
+import qualified Ros.Actionlib_msgs.GoalStatusArray as GOS
+import Ros.Topic (showTopic)
+import Data.Maybe (isJust)
+import Ros.Topic (filter)
+import Data.Maybe (fromJust)
+
+{-
+Setup:
+
+roslaunch roslaunch pr2_gazebo pr2_empty_world.launch
+roslaunch simple_grab_hs right_arm_navigation.launch
+-}
 
 moveToPose :: Topic IO MoveArmActionGoal
 moveToPose = repeatM msg
   where msg = return $ (def :: MoveArmActionGoal){
           goal = makeMoveArmGoal
           }
-        
+
+makeMoveArmActionGoal :: MoveArmActionGoal
+makeMoveArmActionGoal = (def :: MoveArmActionGoal){
+  goal = makeMoveArmGoal
+  }
+
 makeMoveArmGoal :: MoveArmGoal
 makeMoveArmGoal = (def :: MoveArmGoal) {
   planner_service_name = "ompl_planning/plan_kinematic_path"
@@ -127,5 +147,25 @@ makePoseOrientConstraints poseC @SPC.SimplePoseConstraint{SPC.pose = pose,
 
 
 main :: IO ()
-main = runNode "MoveToPose" $ advertise topicName (topicRate 0.5 moveToPose)
-  where topicName = "/move_right_arm/goal"
+main = runNode "MoveToPose" $ do
+  statusMsgs <- subscribe statusTopic
+  let goalMsgs = fmap (makeGoalMsgs) statusMsgs
+      filteredGoalMsgs = fmap fromJust $ filter isJust goalMsgs
+  advertise moveArmGoalTopic (topicRate 10 filteredGoalMsgs)
+    where moveArmGoalTopic = "/move_right_arm/goal"
+          statusTopic = "/move_right_arm/status"
+
+makeGoalMsgs :: GOS.GoalStatusArray -> Maybe MoveArmActionGoal
+makeGoalMsgs GOS.GoalStatusArray{
+  GOS.status_list = statusList
+  }
+  = if anyActive  -- ||  moreThanOneRequest
+    then Nothing
+    else Just makeMoveArmActionGoal
+  where
+    moreThanOneRequest = (length statusList) > 1
+    anyActive = any areActive statusList
+    areActive GOS.GoalStatus{
+      GOS.status = status
+      }
+      = elem status [GOS.pENDING, GOS.aCTIVE, GOS.pREEMPTING, GOS.rECALLING]

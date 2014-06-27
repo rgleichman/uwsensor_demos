@@ -3,7 +3,7 @@
     <remap from="arm_ik" to="pr2_right_arm_kinematics/get_constraint_aware_ik" />	
     <param name="group" type="string" value="right_arm" />
     <param name="controller_action_name" type="string" value="/r_arm_controller/follow_joint_trajectory" />
-    <param name="trajectory_filter_allowed_time" type="double" value="0.1" />
+    <param name="trajectory_filter_allowed_time" type="double" value="0.2" />
   </node>
 </launch>
 
