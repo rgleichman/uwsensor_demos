@@ -28,7 +28,8 @@ Library
                    ROS-std-msgs,
                    ROS-pr2-controllers-msgs,
                    ROS-actionlib-msgs,
-                   ROS-pr2-pretouch-sensor-optical-msgs
+                   ROS-pr2-pretouch-sensor-optical-msgs,
+		   deta-default-generics
   GHC-Options:     -O2
   Exposed-Modules: Simple_grab_hs
   Hs-Source-Dirs:  src
