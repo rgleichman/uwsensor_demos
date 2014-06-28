@@ -1,4 +1,10 @@
-module MoveToPose (main) where
+module MoveToPose
+       (main
+        ,makeMoveArmActionGoal
+        ,filterNoActive
+        ,Arm(LeftArm, RightArm)
+       )
+       where
 import Prelude hiding (filter)
 import Ros.Node (Topic)
 import Ros.Node (topicRate)
@@ -36,11 +42,7 @@ roslaunch roslaunch pr2_gazebo pr2_empty_world.launch
 roslaunch simple_grab_hs right_arm_navigation.launch
 -}
 
-moveToPose :: Topic IO MoveArmActionGoal
-moveToPose = repeatM msg
-  where msg = return $ (def :: MoveArmActionGoal){
-          goal = makeMoveArmGoal armOut
-          }
+data Arm = LeftArm | RightArm
 
 armOut :: POS.Pose
 armOut = POS.Pose{
@@ -62,7 +64,25 @@ armIn = POS.Pose{
   ,POS.orientation = vertical
   }
 
+lArmOut :: POS.Pose
+lArmOut = POS.Pose{
+  POS.position = POI.Point{
+     POI.x = 0.75
+     ,POI.y = 0.188
+     ,POI.z = 0
+     }
+  ,POS.orientation = vertical
+  }
 
+lArmIn :: POS.Pose
+lArmIn = POS.Pose{
+  POS.position = POI.Point{
+     POI.x = 0.5
+     ,POI.y = 0.188
+     ,POI.z = 0
+     }
+  ,POS.orientation = vertical
+  }
 
 vertical :: QUA.Quaternion
 vertical = QUA.Quaternion{
@@ -72,12 +92,12 @@ vertical = QUA.Quaternion{
   ,QUA.w = 1.0
   }
 
-makeMoveArmActionGoal :: POS.Pose -> MoveArmActionGoal
+makeMoveArmActionGoal :: (POS.Pose, Arm) -> MoveArmActionGoal
 makeMoveArmActionGoal pose = (def :: MoveArmActionGoal){
   goal = makeMoveArmGoal pose
   }
 
-makeMoveArmGoal :: POS.Pose -> MoveArmGoal
+makeMoveArmGoal :: (POS.Pose, Arm) -> MoveArmGoal
 makeMoveArmGoal pose = (def :: MoveArmGoal) {
   planner_service_name = "ompl_planning/plan_kinematic_path"
   --, planning_scene_diff =
@@ -89,19 +109,23 @@ makeMoveArmGoal pose = (def :: MoveArmGoal) {
   , disable_collision_monitoring = False
   }
 
-makeMotionPlanRequest :: POS.Pose -> MPR.MotionPlanRequest
-makeMotionPlanRequest pose =
+makeMotionPlanRequest :: (POS.Pose, Arm) -> MPR.MotionPlanRequest
+makeMotionPlanRequest (pose, arm) =
   (def :: MPR.MotionPlanRequest) {
     MPR.num_planning_attempts = 1
                                 -- |ROSDuration is a tuple of (seconds, nanoseconds)
-    ,MPR.group_name = "right_arm"
+    ,MPR.group_name = case arm of
+      RightArm -> "right_arm"
+      LeftArm -> "left_arm"
     ,MPR.allowed_planning_time = (1,0)
     , MPR.goal_constraints = goalConstraints
     }
     where
       poseConstraints = (def :: SPC.SimplePoseConstraint){
         SPC.header = (def :: HEA.Header) {HEA.frame_id = "torso_lift_link"}
-        ,SPC.link_name = "r_wrist_roll_link"
+        ,SPC.link_name = case arm of
+           RightArm -> "r_wrist_roll_link"
+           LeftArm -> "l_wrist_roll_link"
         ,SPC.pose = pose
         ,SPC.absolute_position_tolerance =  POI.Point{
           POI.x = 0.001
@@ -168,8 +192,8 @@ main = runNode "MoveToPose" $ do
   let goalMsgs= fmap makeGoal statusMsgs
       filteredGoalMsgs = filterNoActive statusMsgs goalMsgs
   advertise moveArmGoalTopicName (topicRate 10 filteredGoalMsgs)
-    where moveArmGoalTopicName = "/move_right_arm/goal"
-          statusTopicName = "/move_right_arm/status"
+    where moveArmGoalTopicName = "/move_left_arm/goal"
+          statusTopicName = "/move_left_arm/status"
 
 -- Filters out the second argument when the Action status indicates a goal already in progress
 filterNoActive :: Topic IO GOS.GoalStatusArray -> Topic IO a -> Topic IO a
@@ -178,7 +202,7 @@ filterNoActive goalStatusTopic otherTopic = fmap snd .
                                             $ bothNew goalStatusTopic otherTopic
 
 makeGoal :: t -> MoveArmActionGoal
-makeGoal _ = makeMoveArmActionGoal armIn
+makeGoal _ = makeMoveArmActionGoal (lArmOut, LeftArm)
          
 noActive :: GOS.GoalStatusArray -> Bool
 noActive GOS.GoalStatusArray{
