@@ -27,6 +27,7 @@ import Ros.Topic (showTopic)
 import Data.Maybe (isJust)
 import Ros.Topic (filter)
 import Data.Maybe (fromJust)
+import Ros.Topic.Util (bothNew)
 
 {-
 Setup:
@@ -38,19 +39,49 @@ roslaunch simple_grab_hs right_arm_navigation.launch
 moveToPose :: Topic IO MoveArmActionGoal
 moveToPose = repeatM msg
   where msg = return $ (def :: MoveArmActionGoal){
-          goal = makeMoveArmGoal
+          goal = makeMoveArmGoal armOut
           }
 
-makeMoveArmActionGoal :: MoveArmActionGoal
-makeMoveArmActionGoal = (def :: MoveArmActionGoal){
-  goal = makeMoveArmGoal
+armOut :: POS.Pose
+armOut = POS.Pose{
+  POS.position = POI.Point{
+     POI.x = 0.75
+     ,POI.y = -0.188
+     ,POI.z = 0
+     }
+  ,POS.orientation = vertical
   }
 
-makeMoveArmGoal :: MoveArmGoal
-makeMoveArmGoal = (def :: MoveArmGoal) {
+armIn :: POS.Pose
+armIn = POS.Pose{
+  POS.position = POI.Point{
+     POI.x = 0.5
+     ,POI.y = -0.188
+     ,POI.z = 0
+     }
+  ,POS.orientation = vertical
+  }
+
+
+
+vertical :: QUA.Quaternion
+vertical = QUA.Quaternion{
+  QUA.x = 1.0
+  ,QUA.y = 0.0
+  ,QUA.z = 0.0
+  ,QUA.w = 1.0
+  }
+
+makeMoveArmActionGoal :: POS.Pose -> MoveArmActionGoal
+makeMoveArmActionGoal pose = (def :: MoveArmActionGoal){
+  goal = makeMoveArmGoal pose
+  }
+
+makeMoveArmGoal :: POS.Pose -> MoveArmGoal
+makeMoveArmGoal pose = (def :: MoveArmGoal) {
   planner_service_name = "ompl_planning/plan_kinematic_path"
   --, planning_scene_diff =
-  , motion_plan_request = makeMotionPlanRequest
+  , motion_plan_request = makeMotionPlanRequest pose
   --, operations = undefined
   , accept_partial_plans = False
   , accept_invalid_goals = False
@@ -58,8 +89,8 @@ makeMoveArmGoal = (def :: MoveArmGoal) {
   , disable_collision_monitoring = False
   }
 
-makeMotionPlanRequest :: MPR.MotionPlanRequest
-makeMotionPlanRequest =
+makeMotionPlanRequest :: POS.Pose -> MPR.MotionPlanRequest
+makeMotionPlanRequest pose =
   (def :: MPR.MotionPlanRequest) {
     MPR.num_planning_attempts = 1
                                 -- |ROSDuration is a tuple of (seconds, nanoseconds)
@@ -68,25 +99,10 @@ makeMotionPlanRequest =
     , MPR.goal_constraints = goalConstraints
     }
     where
-      pose = (def :: SPC.SimplePoseConstraint){
+      poseConstraints = (def :: SPC.SimplePoseConstraint){
         SPC.header = (def :: HEA.Header) {HEA.frame_id = "torso_lift_link"}
         ,SPC.link_name = "r_wrist_roll_link"
-        ,SPC.pose = POS.Pose{
-          POS.position = POI.Point{
-             POI.x = 0.75
-             --POI.x = 0.745
-             --POI.x = 0.5
-             ,POI.y = -0.188
-             ,POI.z = 0
-                      --,POI.z = -0.3
-             }
-          ,POS.orientation = QUA.Quaternion{
-             QUA.x = 1.0
-             ,QUA.y = 0.0
-             ,QUA.z = 0.0
-             ,QUA.w = 1.0
-             }
-          }
+        ,SPC.pose = pose
         ,SPC.absolute_position_tolerance =  POI.Point{
           POI.x = 0.001
           ,POI.y = 0.001
@@ -96,7 +112,7 @@ makeMotionPlanRequest =
         ,SPC.absolute_pitch_tolerance = 0.04
         ,SPC.absolute_yaw_tolerance = 0.04
         }
-      goalConstraints = makeGoalConstraints pose
+      goalConstraints = makeGoalConstraints poseConstraints
     
 makeGoalConstraints :: SPC.SimplePoseConstraint -> CON.Constraints
 makeGoalConstraints pose = (def :: CON.Constraints){
@@ -148,23 +164,28 @@ makePoseOrientConstraints poseC @SPC.SimplePoseConstraint{SPC.pose = pose,
 
 main :: IO ()
 main = runNode "MoveToPose" $ do
-  statusMsgs <- subscribe statusTopic
-  let goalMsgs = fmap (makeGoalMsgs) statusMsgs
-      filteredGoalMsgs = fmap fromJust $ filter isJust goalMsgs
-  advertise moveArmGoalTopic (topicRate 10 filteredGoalMsgs)
-    where moveArmGoalTopic = "/move_right_arm/goal"
-          statusTopic = "/move_right_arm/status"
+  statusMsgs <- subscribe statusTopicName
+  let goalMsgs= fmap makeGoal statusMsgs
+      filteredGoalMsgs = filterNoActive statusMsgs goalMsgs
+  advertise moveArmGoalTopicName (topicRate 10 filteredGoalMsgs)
+    where moveArmGoalTopicName = "/move_right_arm/goal"
+          statusTopicName = "/move_right_arm/status"
 
-makeGoalMsgs :: GOS.GoalStatusArray -> Maybe MoveArmActionGoal
-makeGoalMsgs GOS.GoalStatusArray{
+-- Filters out the second argument when the Action status indicates a goal already in progress
+filterNoActive :: Topic IO GOS.GoalStatusArray -> Topic IO a -> Topic IO a
+filterNoActive goalStatusTopic otherTopic = fmap snd .
+                                            filter (noActive . fst)
+                                            $ bothNew goalStatusTopic otherTopic
+
+makeGoal :: t -> MoveArmActionGoal
+makeGoal _ = makeMoveArmActionGoal armIn
+         
+noActive :: GOS.GoalStatusArray -> Bool
+noActive GOS.GoalStatusArray{
   GOS.status_list = statusList
   }
-  = if anyActive  -- ||  moreThanOneRequest
-    then Nothing
-    else Just makeMoveArmActionGoal
+  = not $ any areActive statusList
   where
-    moreThanOneRequest = (length statusList) > 1
-    anyActive = any areActive statusList
     areActive GOS.GoalStatus{
       GOS.status = status
       }
