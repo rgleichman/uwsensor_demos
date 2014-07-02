@@ -2,6 +2,7 @@ module MoveToPose
        (main
         ,makeMoveArmActionGoal
         ,filterNoActive
+        ,vertical
         ,Arm(LeftArm, RightArm)
        )
        where
@@ -89,7 +90,7 @@ vertical = QUA.Quaternion{
   QUA.x = 1.0
   ,QUA.y = 0.0
   ,QUA.z = 0.0
-  ,QUA.w = 1.0
+  ,QUA.w = -1.0
   }
 
 makeMoveArmActionGoal :: (POS.Pose, Arm) -> MoveArmActionGoal
