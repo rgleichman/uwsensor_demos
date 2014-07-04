@@ -2,6 +2,7 @@ module MoveToPose
        (main
         ,makeMoveArmActionGoal
         ,filterNoActive
+        ,filterActive
         ,vertical
         ,Arm(LeftArm, RightArm)
        )
@@ -200,6 +201,12 @@ main = runNode "MoveToPose" $ do
 filterNoActive :: Topic IO GOS.GoalStatusArray -> Topic IO a -> Topic IO a
 filterNoActive goalStatusTopic otherTopic = fmap snd .
                                             filter (noActive . fst)
+                                            $ bothNew goalStatusTopic otherTopic
+
+-- Filters out the second argument when the Action status indicates a goal already in progress
+filterActive :: Topic IO GOS.GoalStatusArray -> Topic IO a -> Topic IO a
+filterActive goalStatusTopic otherTopic = fmap snd .
+                                            filter (not . noActive . fst)
                                             $ bothNew goalStatusTopic otherTopic
 
 makeGoal :: t -> MoveArmActionGoal
