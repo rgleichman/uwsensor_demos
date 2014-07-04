@@ -138,6 +138,24 @@ forwardBackControl = do
   advertise leftMoveArmGoalTopicName (topicRate 10 goals)
 
 {-
+goToBlockedState
+
+Behaviorlly:
+*Go forwards a little bit at a time if the sensor is not blocked
+*If during a step the sensor becomes blocked
+*Then record the current joint state
+*And command the robot to go to that joint state
+
+Code:
+*get sensor messages
+*if sensors are not blocked and no active goals, then create a pose goal message
+*combine the sensor messages with the joint state messages
+*filter the combined messages to be only on transitions from not blocked to blocked
+*for each filtered message create a joint goal message from the joint state message
+*merge and publish the pose goal topic and the joint goal topic
+-}
+
+{-
 * get status
 * get sensor messages
 * convert status messages to acceptingGoals indicator
