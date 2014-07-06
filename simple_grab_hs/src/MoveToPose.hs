@@ -116,7 +116,7 @@ makeMoveArmGoal pose = (def :: MoveArmGoal) {
   , accept_partial_plans = False
   , accept_invalid_goals = False
   , disable_ik = False
-  , disable_collision_monitoring = False
+  , disable_collision_monitoring = True
   }
 
 
@@ -159,8 +159,8 @@ makeJointConstraints arm jointPositions = (def :: CON.Constraints){
   where makeJointConstraint jointPosition jointName = JOC.JointConstraint {
           JOC.joint_name = jointName
           ,JOC.position = jointPosition
-          ,JOC.tolerance_above = 0.005
-          ,JOC.tolerance_below = 0.005
+          ,JOC.tolerance_above = 0.0001
+          ,JOC.tolerance_below = 0.0001
           ,JOC.weight = 0
           }
         jointNames = case arm of
@@ -232,7 +232,8 @@ makePoseOrientConstraints poseC @SPC.SimplePoseConstraint{SPC.pose = pose,
 main :: IO ()
 main = runNode "MoveToPose" goToPose
 
-goToJoints = do
+goToPose :: Node ()
+goToPose = do
   statusMsgs <- subscribe statusTopicName
   let goalMsgs= fmap makeGoal statusMsgs
       filteredGoalMsgs = filterNoActive statusMsgs goalMsgs
@@ -241,8 +242,8 @@ goToJoints = do
           statusTopicName = "/move_left_arm/status"
 
           
-goToPose :: Node ()
-goToPose = do
+goToJoints :: Node ()
+goToJoints = do
   statusMsgs <- subscribe statusTopicName
   let goalMsgs= fmap makeJointGoal statusMsgs
       filteredGoalMsgs = filterNoActive statusMsgs goalMsgs
@@ -264,7 +265,7 @@ filterActive goalStatusTopic otherTopic = fmap snd .
                                             $ bothNew goalStatusTopic otherTopic
 
 makeGoal :: t -> MoveArmActionGoal
-makeGoal _ = makeMoveArmActionGoal (PoseGoal lArmOut, LeftArm)
+makeGoal _ = makeMoveArmActionGoal (PoseGoal lArmIn, LeftArm)
          
 noActive :: GOS.GoalStatusArray -> Bool
 noActive GOS.GoalStatusArray{

@@ -22,6 +22,9 @@ import qualified Ros.Std_msgs.Int64 as I
 import qualified Ros.Topic.Util as TU
 import qualified Ros.Actionlib_msgs.GoalID as GID
 import Data.Default.Generics (def)
+import Ros.Pr2_controllers_msgs.JointTrajectoryControllerState as JTS
+import qualified Ros.Trajectory_msgs.JointTrajectoryPoint as JTP
+import Ros.Node (runHandler)
 
 -- CONSTANTS
 rightMoveArmGoalTopicName :: String
@@ -38,6 +41,27 @@ leftStatusTopicName :: String
 leftStatusTopicName = "/move_left_arm/status"
 leftArmCancelName :: String
 leftArmCancelName = "/move_left_arm/cancel"
+
+currentArm :: MTP.Arm
+currentArm = MTP.LeftArm
+
+statusTopicName :: String
+statusTopicName = case currentArm of
+  MTP.LeftArm -> leftStatusTopicName
+  MTP.RightArm -> rightStatusTopicName
+
+sensorTopicName :: String
+sensorTopicName = case currentArm of
+  MTP.LeftArm -> leftSensorTopicName
+  MTP.RightArm -> rightSensorTopicName
+
+moveArmGoalTopicName = case currentArm of
+  MTP.LeftArm -> leftMoveArmGoalTopicName
+  MTP.RightArm -> rightMoveArmGoalTopicName
+
+armStateTopicName = case currentArm of
+  MTP.LeftArm -> "/l_arm_controller/state"
+  MTP.RightArm -> "/r_arm_controller/state"
 
 -- x+ = forwards away from trunk parallel to ground
 -- y+ = leftwards, 0 is midline of robot
@@ -79,6 +103,9 @@ lArmIn = POS.Pose{
   ,POS.orientation = MTP.vertical
   }
 
+armInPoint = case currentArm of
+  MTP.LeftArm -> lArmInPoint
+
 lArmInPoint :: POI.Point
 lArmInPoint = POI.Point{
   POI.x = 0.5
@@ -102,7 +129,7 @@ data Direction = DirForward | DirBackward
 -- MAINS
 
 main :: IO ()
-main = runNode "AngleGripper" $ goToTwoPose
+main = runNode "AngleGripper" $ goToBlockedState
           
 
 goToTwoPose :: Node ()
@@ -154,6 +181,38 @@ Code:
 *for each filtered message create a joint goal message from the joint state message
 *merge and publish the pose goal topic and the joint goal topic
 -}
+
+-- TODO: cycle the integration so that if it goes above the maximum value, it becomes the minimum value
+goToBlockedState :: Node ()
+goToBlockedState = do
+  status <- subscribe statusTopicName
+  sensor <- subscribe sensorTopicName
+  armState <- subscribe armStateTopicName
+  let
+    broken = fmap anyBroken sensor
+    limitedBroken = MTP.filterNoActive status broken
+    directions = fmap brokenToDirection limitedBroken
+    onlyForward = TOP.filter (\x -> case x of DirForward -> True
+                                              _ -> False)
+                  directions
+    pointVectors = fmap directionsToPoints onlyForward
+    position = fmap unMPoint $ integrateWithBounds
+                 (MPoint . clampPosition . unMPoint)
+                 (MPoint armInPoint)
+                 (fmap MPoint pointVectors)
+    goals = fmap (positionsToGoals currentArm MTP.vertical) position
+    -- blocked detection
+    consecBroken = TU.bothNew (TU.consecutive broken) armState
+    breaking = TOP.filter (\(x, _) -> case x of (False, True) -> True
+                                                _ -> False) consecBroken
+    armStateWhenBroken = fmap snd breaking
+    breakingGoals = fmap (armStateToGoal currentArm) armStateWhenBroken
+    limitedBreakingGoals = TU.gate breakingGoals limitedBroken
+    allGoals = TU.merge goals limitedBreakingGoals
+    --allGoals = TU.merge goals breakingGoals
+  advertise moveArmGoalTopicName allGoals --(topicRate 10 allGoals)
+  advertise "chatter" limitedBreakingGoals
+
 
 {-
 * get status
@@ -208,8 +267,8 @@ positionsToGoals :: MTP.Arm -> QUA.Quaternion -> POI.Point -> MoveArmActionGoal
 positionsToGoals arm orientation position= MTP.makeMoveArmActionGoal $(MTP.PoseGoal $ POS.Pose position orientation, arm)
 
 delta :: Double
---delta = 0.01
-delta = 0.50
+delta = 0.2
+--delta = 0.50
 
 directionsToPoints :: Direction -> POI.Point
 directionsToPoints DirForward = POI.Point delta 0 0
@@ -220,6 +279,10 @@ sensorToDirectinos beams = if anyBroken beams then DirBackward else DirForward
 
 makeGoal :: OB.OpticalBeams -> MoveArmActionGoal
 makeGoal beams = MTP.makeMoveArmActionGoal $ if anyBroken beams then (MTP.PoseGoal lArmIn, MTP.LeftArm) else (MTP.PoseGoal lArmOut, MTP.LeftArm)
+
+armStateToGoal :: MTP.Arm -> JTS.JointTrajectoryControllerState -> MoveArmActionGoal
+armStateToGoal arm state = MTP.makeMoveArmActionGoal (MTP.JointGoal joints, arm)
+  where joints = VEC.toList $ JTP.positions $ JTS.actual state
 
 -- UTILITY FUNCTIONS
 anyBroken :: OB.OpticalBeams -> Bool
