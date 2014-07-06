@@ -5,6 +5,7 @@ module MoveToPose
         ,filterActive
         ,vertical
         ,Arm(LeftArm, RightArm)
+        ,ArmGoal(PoseGoal, JointGoal)
        )
        where
 import Prelude hiding (filter)
@@ -36,6 +37,9 @@ import Data.Maybe (isJust)
 import Ros.Topic (filter)
 import Data.Maybe (fromJust)
 import Ros.Topic.Util (bothNew)
+import Ros.Geometry_msgs.Pose
+import qualified Ros.Arm_navigation_msgs.JointConstraint as JOC
+import Ros.Node (Node)
 
 {-
 Setup:
@@ -45,6 +49,8 @@ roslaunch simple_grab_hs right_arm_navigation.launch
 -}
 
 data Arm = LeftArm | RightArm
+
+data ArmGoal = PoseGoal POS.Pose | JointGoal [Double]
 
 armOut :: POS.Pose
 armOut = POS.Pose{
@@ -94,12 +100,14 @@ vertical = QUA.Quaternion{
   ,QUA.w = -1.0
   }
 
-makeMoveArmActionGoal :: (POS.Pose, Arm) -> MoveArmActionGoal
+
+
+makeMoveArmActionGoal :: (ArmGoal, Arm) -> MoveArmActionGoal
 makeMoveArmActionGoal pose = (def :: MoveArmActionGoal){
   goal = makeMoveArmGoal pose
   }
 
-makeMoveArmGoal :: (POS.Pose, Arm) -> MoveArmGoal
+makeMoveArmGoal :: (ArmGoal, Arm) -> MoveArmGoal
 makeMoveArmGoal pose = (def :: MoveArmGoal) {
   planner_service_name = "ompl_planning/plan_kinematic_path"
   --, planning_scene_diff =
@@ -111,8 +119,9 @@ makeMoveArmGoal pose = (def :: MoveArmGoal) {
   , disable_collision_monitoring = False
   }
 
-makeMotionPlanRequest :: (POS.Pose, Arm) -> MPR.MotionPlanRequest
-makeMotionPlanRequest (pose, arm) =
+
+makeMotionPlanRequest :: (ArmGoal, Arm) -> MPR.MotionPlanRequest
+makeMotionPlanRequest (armGoal, arm) =
   (def :: MPR.MotionPlanRequest) {
     MPR.num_planning_attempts = 1
                                 -- |ROSDuration is a tuple of (seconds, nanoseconds)
@@ -123,7 +132,10 @@ makeMotionPlanRequest (pose, arm) =
     , MPR.goal_constraints = goalConstraints
     }
     where
-      poseConstraints = (def :: SPC.SimplePoseConstraint){
+      goalConstraints = case armGoal of
+        PoseGoal pose -> makePoseConstraints $ poseConstraints pose
+        JointGoal jointPositions -> makeJointConstraints arm jointPositions
+      poseConstraints pose = (def :: SPC.SimplePoseConstraint){
         SPC.header = (def :: HEA.Header) {HEA.frame_id = "torso_lift_link"}
         ,SPC.link_name = case arm of
            RightArm -> "r_wrist_roll_link"
@@ -138,10 +150,39 @@ makeMotionPlanRequest (pose, arm) =
         ,SPC.absolute_pitch_tolerance = 0.04
         ,SPC.absolute_yaw_tolerance = 0.04
         }
-      goalConstraints = makeGoalConstraints poseConstraints
-    
-makeGoalConstraints :: SPC.SimplePoseConstraint -> CON.Constraints
-makeGoalConstraints pose = (def :: CON.Constraints){
+
+-- makeJointConstraints :: [Double] -> CON.Constraints
+makeJointConstraints :: Arm -> [Double] -> CON.Constraints
+makeJointConstraints arm jointPositions = (def :: CON.Constraints){
+  CON.joint_constraints = zipWith makeJointConstraint jointPositions jointNames
+  }
+  where makeJointConstraint jointPosition jointName = JOC.JointConstraint {
+          JOC.joint_name = jointName
+          ,JOC.position = jointPosition
+          ,JOC.tolerance_above = 0.005
+          ,JOC.tolerance_below = 0.005
+          ,JOC.weight = 0
+          }
+        jointNames = case arm of
+          RightArm -> ["r_shoulder_pan_joint",
+                      "r_shoulder_lift_joint",
+                      "r_upper_arm_roll_joint",
+                      "r_elbow_flex_joint",
+                      "r_forearm_roll_joint",
+                      "r_wrist_flex_joint",
+                      "r_wrist_roll_joint"]
+          LeftArm -> ["l_shoulder_pan_joint",
+                      "l_shoulder_lift_joint",
+                      "l_upper_arm_roll_joint",
+                      "l_elbow_flex_joint",
+                      "l_forearm_roll_joint",
+                      "l_wrist_flex_joint",
+                      "l_wrist_roll_joint"]
+          
+
+
+makePoseConstraints :: SPC.SimplePoseConstraint -> CON.Constraints
+makePoseConstraints pose = (def :: CON.Constraints){
   CON.position_constraints = [posConstraint]
   ,CON.orientation_constraints = [orientConstraint]
   }
@@ -160,7 +201,7 @@ makePoseOrientConstraints poseC @SPC.SimplePoseConstraint{SPC.pose = pose,
     posC = (def :: POC.PositionConstraint){
       POC.header = header'
       ,POC.link_name = linkName
-      ,POC.position = POS.position $ pose
+      ,POC.position = POS.position pose
       ,POC.constraint_region_shape = constraintRegionShape
       ,POC.constraint_region_orientation = constraintRegionOrientation
       ,POC.weight = 1.0
@@ -179,7 +220,7 @@ makePoseOrientConstraints poseC @SPC.SimplePoseConstraint{SPC.pose = pose,
     orC = (def :: ORC.OrientationConstraint){
       ORC.header = header'
       , ORC.link_name = linkName
-      ,ORC.orientation = POS.orientation $ pose
+      ,ORC.orientation = POS.orientation pose
       ,ORC._type = orType
       ,ORC.absolute_roll_tolerance = SPC.absolute_roll_tolerance poseC
       ,ORC.absolute_pitch_tolerance = SPC.absolute_pitch_tolerance poseC
@@ -189,7 +230,9 @@ makePoseOrientConstraints poseC @SPC.SimplePoseConstraint{SPC.pose = pose,
 
 
 main :: IO ()
-main = runNode "MoveToPose" $ do
+main = runNode "MoveToPose" goToPose
+
+goToJoints = do
   statusMsgs <- subscribe statusTopicName
   let goalMsgs= fmap makeGoal statusMsgs
       filteredGoalMsgs = filterNoActive statusMsgs goalMsgs
@@ -197,6 +240,17 @@ main = runNode "MoveToPose" $ do
     where moveArmGoalTopicName = "/move_left_arm/goal"
           statusTopicName = "/move_left_arm/status"
 
+          
+goToPose :: Node ()
+goToPose = do
+  statusMsgs <- subscribe statusTopicName
+  let goalMsgs= fmap makeJointGoal statusMsgs
+      filteredGoalMsgs = filterNoActive statusMsgs goalMsgs
+  advertise moveArmGoalTopicName (topicRate 10 filteredGoalMsgs)
+    where moveArmGoalTopicName = "/move_left_arm/goal"
+          statusTopicName = "/move_left_arm/status"
+          makeJointGoal _ = makeMoveArmActionGoal (JointGoal [2.00, 0, 0, -0.2, 0, -0.15, 0], LeftArm)
+          
 -- Filters out the second argument when the Action status indicates a goal already in progress
 filterNoActive :: Topic IO GOS.GoalStatusArray -> Topic IO a -> Topic IO a
 filterNoActive goalStatusTopic otherTopic = fmap snd .
@@ -210,7 +264,7 @@ filterActive goalStatusTopic otherTopic = fmap snd .
                                             $ bothNew goalStatusTopic otherTopic
 
 makeGoal :: t -> MoveArmActionGoal
-makeGoal _ = makeMoveArmActionGoal (lArmOut, LeftArm)
+makeGoal _ = makeMoveArmActionGoal (PoseGoal lArmOut, LeftArm)
          
 noActive :: GOS.GoalStatusArray -> Bool
 noActive GOS.GoalStatusArray{
@@ -221,4 +275,4 @@ noActive GOS.GoalStatusArray{
     areActive GOS.GoalStatus{
       GOS.status = status
       }
-      = elem status [GOS.pENDING, GOS.aCTIVE, GOS.pREEMPTING, GOS.rECALLING]
+      = status `elem` [GOS.pENDING, GOS.aCTIVE, GOS.pREEMPTING, GOS.rECALLING]

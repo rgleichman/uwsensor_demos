@@ -205,7 +205,7 @@ clampPosition :: POI.Point -> POI.Point
 clampPosition point@POI.Point{POI.x = x} = point{POI.x = clamp 0.5 0.75 x}
 
 positionsToGoals :: MTP.Arm -> QUA.Quaternion -> POI.Point -> MoveArmActionGoal
-positionsToGoals arm orientation position= MTP.makeMoveArmActionGoal $ (POS.Pose position orientation, arm)
+positionsToGoals arm orientation position= MTP.makeMoveArmActionGoal $(MTP.PoseGoal $ POS.Pose position orientation, arm)
 
 delta :: Double
 --delta = 0.01
@@ -219,7 +219,7 @@ sensorToDirectinos :: OB.OpticalBeams -> Direction
 sensorToDirectinos beams = if anyBroken beams then DirBackward else DirForward
 
 makeGoal :: OB.OpticalBeams -> MoveArmActionGoal
-makeGoal beams = MTP.makeMoveArmActionGoal $ if anyBroken beams then (lArmIn, MTP.LeftArm) else (lArmOut, MTP.LeftArm)
+makeGoal beams = MTP.makeMoveArmActionGoal $ if anyBroken beams then (MTP.PoseGoal lArmIn, MTP.LeftArm) else (MTP.PoseGoal lArmOut, MTP.LeftArm)
 
 -- UTILITY FUNCTIONS
 anyBroken :: OB.OpticalBeams -> Bool
