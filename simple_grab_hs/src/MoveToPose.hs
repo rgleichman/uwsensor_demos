@@ -91,6 +91,7 @@ lArmIn = POS.Pose{
      }
   ,POS.orientation = vertical
   }
+        
 
 vertical :: QUA.Quaternion
 vertical = QUA.Quaternion{
@@ -116,7 +117,7 @@ makeMoveArmGoal pose = (def :: MoveArmGoal) {
   , accept_partial_plans = False
   , accept_invalid_goals = False
   , disable_ik = False
-  , disable_collision_monitoring = True
+  , disable_collision_monitoring = False
   }
 
 
@@ -230,7 +231,7 @@ makePoseOrientConstraints poseC @SPC.SimplePoseConstraint{SPC.pose = pose,
 
 
 main :: IO ()
-main = runNode "MoveToPose" goToPose
+main = runNode "MoveToPose" goToJoints
 
 goToPose :: Node ()
 goToPose = do
@@ -241,16 +242,24 @@ goToPose = do
     where moveArmGoalTopicName = "/move_left_arm/goal"
           statusTopicName = "/move_left_arm/status"
 
+jointIn :: ArmGoal
+jointIn = JointGoal [0.004756799416523627, 0.8257437237376051, 0.008112377493888268, -1.983697779750514, -3.1403027579990344, -1.1579279177261936, 1.5647980430711304]
+
+jointAlmostIn :: ArmGoal
+jointAlmostIn = case jointIn of
+  (JointGoal x) -> JointGoal $ fmap (+ 0.01) x
+
+jointSlap = JointGoal [2.00, 0, 0, -0.2, 0, -0.15, 0]
           
 goToJoints :: Node ()
 goToJoints = do
   statusMsgs <- subscribe statusTopicName
   let goalMsgs= fmap makeJointGoal statusMsgs
       filteredGoalMsgs = filterNoActive statusMsgs goalMsgs
-  advertise moveArmGoalTopicName (topicRate 10 filteredGoalMsgs)
+  advertise moveArmGoalTopicName (topicRate (100) filteredGoalMsgs)
     where moveArmGoalTopicName = "/move_left_arm/goal"
           statusTopicName = "/move_left_arm/status"
-          makeJointGoal _ = makeMoveArmActionGoal (JointGoal [2.00, 0, 0, -0.2, 0, -0.15, 0], LeftArm)
+          makeJointGoal _ = makeMoveArmActionGoal (jointAlmostIn, LeftArm)
           
 -- Filters out the second argument when the Action status indicates a goal already in progress
 filterNoActive :: Topic IO GOS.GoalStatusArray -> Topic IO a -> Topic IO a

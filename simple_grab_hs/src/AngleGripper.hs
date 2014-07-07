@@ -22,7 +22,7 @@ import qualified Ros.Std_msgs.Int64 as I
 import qualified Ros.Topic.Util as TU
 import qualified Ros.Actionlib_msgs.GoalID as GID
 import Data.Default.Generics (def)
-import Ros.Pr2_controllers_msgs.JointTrajectoryControllerState as JTS
+import qualified Ros.Pr2_controllers_msgs.JointTrajectoryControllerState as JTS
 import qualified Ros.Trajectory_msgs.JointTrajectoryPoint as JTP
 import Ros.Node (runHandler)
 
@@ -186,10 +186,15 @@ Code:
 goToBlockedState :: Node ()
 goToBlockedState = do
   status <- subscribe statusTopicName
-  sensor <- subscribe sensorTopicName
+  --sensor <- subscribe sensorTopicName
+  --sensor <- subscribe rightSensorTopicName
+  sensor <- subscribe rightSensorTopicName
   armState <- subscribe armStateTopicName
   let
-    broken = fmap anyBroken sensor
+    -- the sensor runs at 500hz, so sensorSub will run at 10hz
+    sensorSub = TU.subsample 50 sensor
+    --broken = fmap anyBroken sensor
+    broken = fmap anyBroken sensorSub
     limitedBroken = MTP.filterNoActive status broken
     directions = fmap brokenToDirection limitedBroken
     onlyForward = TOP.filter (\x -> case x of DirForward -> True
@@ -197,7 +202,7 @@ goToBlockedState = do
                   directions
     pointVectors = fmap directionsToPoints onlyForward
     position = fmap unMPoint $ integrateWithBounds
-                 (MPoint . clampPosition . unMPoint)
+                 (MPoint . circularClampPosition . unMPoint)
                  (MPoint armInPoint)
                  (fmap MPoint pointVectors)
     goals = fmap (positionsToGoals currentArm MTP.vertical) position
@@ -207,10 +212,13 @@ goToBlockedState = do
                                                 _ -> False) consecBroken
     armStateWhenBroken = fmap snd breaking
     breakingGoals = fmap (armStateToGoal currentArm) armStateWhenBroken
-    limitedBreakingGoals = TU.gate breakingGoals limitedBroken
+    limitedBreakingGoals = MTP.filterNoActive status $ fmap fst $ TU.everyNew breakingGoals limitedBroken
+    --limitedBreakingGoals = TU.gate breakingGoals limitedBroken
     allGoals = TU.merge goals limitedBreakingGoals
-    --allGoals = TU.merge goals breakingGoals
-  advertise moveArmGoalTopicName allGoals --(topicRate 10 allGoals)
+    --allGoals =TU.gate (TU.merge goals breakingGoals) limitedBroken
+    --allGoals = TU.merge goals
+    --allGoals = TU.merge goals limitedBreaking
+  advertise moveArmGoalTopicName allGoals --(topicRate (10) allGoals)
   advertise "chatter" limitedBreakingGoals
 
 
@@ -259,15 +267,22 @@ brokenToDirection :: Bool -> Direction
 brokenToDirection True = DirBackward
 brokenToDirection False = DirForward
 
+maxOut = 0.75
+maxIn = 0.5
+
 --Make sure the position is inside the workspace of the robot
 clampPosition :: POI.Point -> POI.Point
-clampPosition point@POI.Point{POI.x = x} = point{POI.x = clamp 0.5 0.75 x}
+clampPosition point@POI.Point{POI.x = x} = point{POI.x = clamp maxIn maxOut x}
+
+--Make sure the position is inside the workspace of the robot
+circularClampPosition :: POI.Point -> POI.Point
+circularClampPosition point@POI.Point{POI.x = x} = point{POI.x = circularClamp maxIn maxOut x}
 
 positionsToGoals :: MTP.Arm -> QUA.Quaternion -> POI.Point -> MoveArmActionGoal
 positionsToGoals arm orientation position= MTP.makeMoveArmActionGoal $(MTP.PoseGoal $ POS.Pose position orientation, arm)
 
 delta :: Double
-delta = 0.2
+delta = 0.10
 --delta = 0.50
 
 directionsToPoints :: Direction -> POI.Point
@@ -298,3 +313,10 @@ integrateWithBounds clampFunc initVal = TOP.scan (\ x y -> clampFunc $ mappend  
 -- if bottom > top then return bottom
 clamp :: Ord a => a -> a -> a -> a
 clamp bottom top value = max bottom $ min top value
+
+circularClamp :: Ord a => a -> a -> a -> a
+circularClamp bottom top value
+  | top < bottom = error "circularClamp: top less than bottom"
+  | value >= bottom && value <= top = value
+  | value < bottom = top
+  | value > top = bottom
