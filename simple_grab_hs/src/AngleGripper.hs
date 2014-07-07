@@ -25,6 +25,11 @@ import Data.Default.Generics (def)
 import qualified Ros.Pr2_controllers_msgs.JointTrajectoryControllerState as JTS
 import qualified Ros.Trajectory_msgs.JointTrajectoryPoint as JTP
 import Ros.Node (runHandler)
+import Ros.Topic.Util ((<+>))
+import Ros.Node (runTopic)
+import Ros.Node (Topic)
+import Ros.Node (Topic)
+
 
 -- CONSTANTS
 rightMoveArmGoalTopicName :: String
@@ -212,8 +217,8 @@ goToBlockedState = do
                                                 _ -> False) consecBroken
     armStateWhenBroken = fmap snd breaking
     breakingGoals = fmap (armStateToGoal currentArm) armStateWhenBroken
-    limitedBreakingGoals = MTP.filterNoActive status $ fmap fst $ TU.everyNew breakingGoals limitedBroken
-    --limitedBreakingGoals = TU.gate breakingGoals limitedBroken
+    --limitedBreakingGoals = MTP.filterNoActive status $ fmap fst $ TU.everyNew breakingGoals limitedBroken
+    limitedBreakingGoals = fmap snd $  waitFor limitedBroken breakingGoals
     allGoals = TU.merge goals limitedBreakingGoals
     --allGoals =TU.gate (TU.merge goals breakingGoals) limitedBroken
     --allGoals = TU.merge goals
@@ -320,3 +325,19 @@ circularClamp bottom top value
   | value >= bottom && value <= top = value
   | value < bottom = top
   | value > top = bottom
+
+
+-- |Returns a 'Topic' that produces a new pair every time both of the
+-- component 'Topic's have produced a new value. The composite
+-- 'Topic' will produce pairs at the rate of the slower component
+-- 'Topic' consisting of the most recent value from each 'Topic'.
+
+-- waitFor a b publishes when it gets a new b and then a new a
+waitFor :: Topic IO a -> Topic IO b -> Topic IO (a,b)
+waitFor t1 t2 = TOP.Topic $ warmup =<< runTopic (t1 <+> t2)
+  where warmup (v,t) = go v =<< runTopic t
+        go (Left _) (l@(Left _), t) = go l =<< runTopic t
+        --go (Left x) (Right y, t) = return ((x,y), Topic $ warmup =<< runTopic t)
+        go (Left _) (r@(Right _), t) = go r =<< runTopic t
+        go (Right _) (r@(Right _), t) = go r =<< runTopic t
+        go (Right y) (Left x, t) = return ((x,y), TOP.Topic $ warmup =<< runTopic t)
