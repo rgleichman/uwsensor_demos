@@ -191,13 +191,12 @@ Code:
 goToBlockedState :: Node ()
 goToBlockedState = do
   status <- subscribe statusTopicName
-  --sensor <- subscribe sensorTopicName
+  sensor <- subscribe sensorTopicName
   --sensor <- subscribe rightSensorTopicName
-  sensor <- subscribe rightSensorTopicName
   armState <- subscribe armStateTopicName
   let
     -- the sensor runs at 500hz, so sensorSub will run at 10hz
-    sensorSub = TU.subsample 50 sensor
+    sensorSub = TU.subsample 5 sensor
     --broken = fmap anyBroken sensor
     broken = fmap anyBroken sensorSub
     limitedBroken = MTP.filterNoActive status broken
@@ -217,13 +216,9 @@ goToBlockedState = do
                                                 _ -> False) consecBroken
     armStateWhenBroken = fmap snd breaking
     breakingGoals = fmap (armStateToGoal currentArm) armStateWhenBroken
-    --limitedBreakingGoals = MTP.filterNoActive status $ fmap fst $ TU.everyNew breakingGoals limitedBroken
     limitedBreakingGoals = fmap snd $  waitFor limitedBroken breakingGoals
     allGoals = TU.merge goals limitedBreakingGoals
-    --allGoals =TU.gate (TU.merge goals breakingGoals) limitedBroken
-    --allGoals = TU.merge goals
-    --allGoals = TU.merge goals limitedBreaking
-  advertise moveArmGoalTopicName allGoals --(topicRate (10) allGoals)
+  advertise moveArmGoalTopicName allGoals
   advertise "chatter" limitedBreakingGoals
 
 
@@ -287,7 +282,7 @@ positionsToGoals :: MTP.Arm -> QUA.Quaternion -> POI.Point -> MoveArmActionGoal
 positionsToGoals arm orientation position= MTP.makeMoveArmActionGoal $(MTP.PoseGoal $ POS.Pose position orientation, arm)
 
 delta :: Double
-delta = 0.10
+delta = 0.04
 --delta = 0.50
 
 directionsToPoints :: Direction -> POI.Point
@@ -332,7 +327,8 @@ circularClamp bottom top value
 -- 'Topic' will produce pairs at the rate of the slower component
 -- 'Topic' consisting of the most recent value from each 'Topic'.
 
--- waitFor a b publishes when it gets a new b and then a new a
+-- waitFor a b publishes when it gets a new b and then a new a.
+-- can be used if 'b' must only be published after an event 'a'
 waitFor :: Topic IO a -> Topic IO b -> Topic IO (a,b)
 waitFor t1 t2 = TOP.Topic $ warmup =<< runTopic (t1 <+> t2)
   where warmup (v,t) = go v =<< runTopic t

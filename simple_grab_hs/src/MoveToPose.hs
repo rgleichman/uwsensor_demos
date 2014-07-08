@@ -160,8 +160,8 @@ makeJointConstraints arm jointPositions = (def :: CON.Constraints){
   where makeJointConstraint jointPosition jointName = JOC.JointConstraint {
           JOC.joint_name = jointName
           ,JOC.position = jointPosition
-          ,JOC.tolerance_above = 0.0001
-          ,JOC.tolerance_below = 0.0001
+          ,JOC.tolerance_above = 0.00001
+          ,JOC.tolerance_below = 0.00001
           ,JOC.weight = 0
           }
         jointNames = case arm of
